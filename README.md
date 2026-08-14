@@ -21,6 +21,7 @@ CopyPasta does not require network connectivity for normal operation. CopyPasta 
 - **Local JSON storage** - stored under `%LOCALAPPDATA%\CopyPasta`
 - **Modern Material Design UI** with beautiful, intuitive interface
 - **About dialog** - version, storage path, and security notice
+- **Application icon** - Explorer, taskbar, Start, and window chrome
 
 ### **Advanced Features**
 - **🔍 Search History** - Keeps track of your last 10 searches for quick access
@@ -49,6 +50,7 @@ Security and reliability patch on top of v0.3. No new product features.
 - **Hardened local database load** — `snippets.json` is size- and count-checked and fully validated; invalid data is rejected without overwriting the file
 - **Storage moved to `%LOCALAPPDATA%\CopyPasta`** — existing `%APPDATA%\CopyPasta` data is copied once if the new location is empty; roaming originals are left in place
 - **Removed obsolete `CopyPasta_v0.1.1_Release` binaries** from the source tree
+- **Application icon** — included with this release (Explorer, taskbar, Start, and window chrome)
 
 ## 🆕 **What's New in v0.3**
 
@@ -130,6 +132,7 @@ CopyPastaNative/
 │   └── ClipboardClearPolicy.cs    # Exact-match clipboard clear
 ├── Converters/
 │   └── CountToVisibilityConverter.cs
+├── Assets/                        # Application icon source and .ico
 ├── CopyPastaNative.Tests/         # xUnit tests
 ├── scripts/
 │   └── Release-CopyPasta.ps1      # Local Release publish + hashes
@@ -231,6 +234,7 @@ Snippets are stored with the following structure:
 - Fail-closed load of the local `snippets.json` database (size, count, and field validation)
 - Default storage under `%LOCALAPPDATA%\CopyPasta` with a one-time copy from `%APPDATA%\CopyPasta`
 - Removed obsolete compiled v0.1.1 release artifacts from source
+- Application icon for Explorer, taskbar, Start, and window chrome
 
 ### **v0.3**
 - Targeted .NET 10; disabled unsafe BinaryFormatter compatibility
