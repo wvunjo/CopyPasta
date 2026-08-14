@@ -8,6 +8,7 @@ using System.Windows.Media;
 using System.Windows.Input;
 using CopyPastaNative.Models;
 using CopyPastaNative.Services;
+using CopyPastaNative.Security;
 using MaterialDesignThemes.Wpf;
 using System.ComponentModel;
 using ICSharpCode.AvalonEdit;
@@ -15,12 +16,16 @@ using ICSharpCode.AvalonEdit.Highlighting;
 using Microsoft.Win32;
 using Newtonsoft.Json;
 using System.IO;
+using System.Windows.Threading;
 
 namespace CopyPastaNative
 {
     public partial class MainWindow : Window
     {
         private readonly SnippetService _snippetService;
+        private readonly SettingsService _settingsService;
+        private readonly AppSettings _settings;
+        private readonly DispatcherTimer _clipboardClearTimer;
         private readonly PaletteHelper _paletteHelper;
         private List<Snippet> _allSnippets = new();
         private List<Snippet> _filteredSnippets = new();
@@ -29,14 +34,19 @@ namespace CopyPastaNative
         private bool _showFavoritesOnly = false;
         private bool _isMultiSelectMode = false;
         private List<string> _searchHistory = new(); // Stores up to 10 recent searches
+        private string? _lastCopiedText;
 
         public MainWindow()
         {
             InitializeComponent();
             
             _snippetService = new SnippetService();
+            _settingsService = new SettingsService(_snippetService.DataDirectory);
+            _settings = _settingsService.Load();
             _selectedTags = new List<string>();
             _paletteHelper = new PaletteHelper();
+            _clipboardClearTimer = new DispatcherTimer();
+            _clipboardClearTimer.Tick += ClipboardClearTimer_Tick;
             
             // Initialize theme toggle button
             ThemeToggleButton.Content = "🌙";
@@ -47,6 +57,7 @@ namespace CopyPastaNative
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             await LoadSnippetsAsync();
+            await HandleLoadWarningAsync();
             UpdateTagsFilter();
             UpdateSnippetsDisplayDirect();
             
@@ -167,8 +178,8 @@ namespace CopyPastaNative
                     {
                         try
                         {
-                            Clipboard.SetText(selectedSnippet.Code);
-                            System.Diagnostics.Debug.WriteLine($"Keyboard shortcut: Ctrl+C - Copied code from '{selectedSnippet.Title}'");
+                            CopySnippetToClipboard(selectedSnippet.Code);
+                            System.Diagnostics.Debug.WriteLine("Keyboard shortcut: Ctrl+C - Copied selected snippet");
                         }
                         catch (Exception ex)
                         {
@@ -186,8 +197,8 @@ namespace CopyPastaNative
                     {
                         try
                         {
-                            Clipboard.SetText(selectedSnippet.Code);
-                            System.Diagnostics.Debug.WriteLine($"Keyboard shortcut: Enter - Copied code from '{selectedSnippet.Title}'");
+                            CopySnippetToClipboard(selectedSnippet.Code);
+                            System.Diagnostics.Debug.WriteLine("Keyboard shortcut: Enter - Copied selected snippet");
                             
                             // Move to next item or first item if at the end
                             var index = SnippetsListView.SelectedIndex;
@@ -247,10 +258,6 @@ namespace CopyPastaNative
                 _filteredSnippets = _allSnippets.ToList();
                 
                 System.Diagnostics.Debug.WriteLine($"LoadSnippetsAsync: Loaded {_allSnippets.Count} snippets");
-                foreach (var snippet in _allSnippets)
-                {
-                    System.Diagnostics.Debug.WriteLine($"  - {snippet.Title}: [{string.Join(", ", snippet.Tags ?? new List<string>())}]");
-                }
                 
                 // Update statistics after loading
                 UpdateStatistics();
@@ -998,7 +1005,7 @@ namespace CopyPastaNative
                     var allSnippets = await _snippetService.GetAllSnippetsAsync();
                     
                     // Serialize to JSON
-                    var json = JsonConvert.SerializeObject(allSnippets, Formatting.Indented);
+                    var json = JsonConvert.SerializeObject(allSnippets, SnippetJson.Settings);
                     
                     // Save to file
                     await File.WriteAllTextAsync(saveDialog.FileName, json);
@@ -1039,16 +1046,11 @@ namespace CopyPastaNative
 
                 if (openDialog.ShowDialog() == true)
                 {
-                    // Read the JSON file
-                    var json = await File.ReadAllTextAsync(openDialog.FileName);
-                    
-                    // Deserialize to list of snippets
-                    var importedSnippets = JsonConvert.DeserializeObject<List<Snippet>>(json);
-                    
-                    if (importedSnippets == null || importedSnippets.Count == 0)
+                    var import = SnippetValidator.ParseAndValidateImportFile(openDialog.FileName);
+                    if (!import.Success)
                     {
                         MessageBox.Show(
-                            "No snippets found in the selected file.",
+                            import.Error,
                             "Import Error",
                             MessageBoxButton.OK,
                             MessageBoxImage.Warning
@@ -1056,9 +1058,13 @@ namespace CopyPastaNative
                         return;
                     }
 
-                    // Ask user how to import
+                    var importedSnippets = import.Snippets;
+                    var rejectedNote = import.RejectedCount > 0
+                        ? $"\n\n{import.RejectedCount} invalid snippet(s) were skipped."
+                        : string.Empty;
+
                     var result = MessageBox.Show(
-                        $"Found {importedSnippets.Count} snippet(s) in the file.\n\n" +
+                        $"Found {importedSnippets.Count} valid snippet(s) in the file.{rejectedNote}\n\n" +
                         "How would you like to import them?\n\n" +
                         "Yes - Replace all existing snippets\n" +
                         "No - Add to existing snippets\n" +
@@ -1073,34 +1079,25 @@ namespace CopyPastaNative
 
                     if (result == MessageBoxResult.Yes)
                     {
-                        // Replace mode: Delete all existing, then add imported
-                        foreach (var existingSnippet in _allSnippets)
-                        {
-                            await _snippetService.DeleteSnippetAsync(existingSnippet.Id);
-                        }
-                        
                         foreach (var snippet in importedSnippets)
                         {
-                            snippet.Id = Guid.NewGuid().ToString(); // Generate new ID
-                            await _snippetService.AddSnippetAsync(snippet);
+                            snippet.Id = Guid.NewGuid().ToString();
                         }
+                        await _snippetService.ReplaceAllSnippetsAsync(importedSnippets);
                     }
                     else if (result == MessageBoxResult.No)
                     {
-                        // Add mode: Just add imported snippets
                         foreach (var snippet in importedSnippets)
                         {
-                            snippet.Id = Guid.NewGuid().ToString(); // Generate new ID
+                            snippet.Id = Guid.NewGuid().ToString();
                             await _snippetService.AddSnippetAsync(snippet);
                         }
                     }
 
-                    // Reload snippets in UI
                     await LoadSnippetsAsync();
                     UpdateTagsFilter();
                     ApplyNewFilteringSystem();
                     
-                    // Apply theme if in dark mode
                     if (_isDarkTheme)
                     {
                         UpdateSnippetElementsTheme(true);
@@ -1112,8 +1109,6 @@ namespace CopyPastaNative
                         MessageBoxButton.OK,
                         MessageBoxImage.Information
                     );
-                    
-                    System.Diagnostics.Debug.WriteLine($"Imported {importedSnippets.Count} snippets from {openDialog.FileName}");
                 }
             }
             catch (Exception ex)
@@ -1132,94 +1127,119 @@ namespace CopyPastaNative
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("ReloadSampleDataButton_Click: Starting immediate sample data refresh");
-                
-                // Force immediate use of fresh sample data directly in UI
-                ForceFreshSampleDataInUI();
-                
-                System.Diagnostics.Debug.WriteLine("ReloadSampleDataButton_Click: Sample data immediately refreshed");
-                
-                // Show feedback to user
-                MessageBox.Show("Sample data has been immediately refreshed with PowerShell and Java snippets for testing.", 
-                              "Sample Data Refreshed", 
-                              MessageBoxButton.OK, 
-                              MessageBoxImage.Information);
+                var confirm = MessageBox.Show(
+                    "This will replace all current snippets with the built-in sample set and cannot be undone except from the local backup file.\n\nContinue?",
+                    "Reset to Sample Data",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (confirm != MessageBoxResult.Yes)
+                    return;
+
+                await _snippetService.ResetToSampleDataAsync();
+                await LoadSnippetsAsync();
+                UpdateTagsFilter();
+                ApplyNewFilteringSystem();
+                if (_isDarkTheme)
+                {
+                    UpdateSnippetElementsTheme(true);
+                }
+
+                MessageBox.Show(
+                    "Sample snippets were loaded. Your previous database was kept as snippets.json.bak if a prior save existed.",
+                    "Sample Data Loaded",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in ReloadSampleDataButton_Click: {ex.Message}");
-                MessageBox.Show($"Error refreshing sample data: {ex.Message}", 
-                              "Error", 
-                              MessageBoxButton.OK, 
-                              MessageBoxImage.Error);
+                MessageBox.Show(
+                    "Sample data could not be saved. Your previous snippet file was left unchanged.",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
             }
         }
 
-        private void ForceFreshSampleDataInUI()
+        private void AboutButton_Click(object sender, RoutedEventArgs e)
         {
+            var about = new AboutWindow(_snippetService.DataDirectory, _settingsService, _settings)
+            {
+                Owner = this
+            };
+            about.ShowDialog();
+        }
+
+        private async Task HandleLoadWarningAsync()
+        {
+            if (string.IsNullOrEmpty(_snippetService.LastLoadWarning))
+                return;
+
+            if (_snippetService.BackupExists)
+            {
+                var result = MessageBox.Show(
+                    _snippetService.LastLoadWarning + "\n\nRestore the previous backup of snippets.json?",
+                    "Snippet Database",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    if (await _snippetService.RestoreBackupAsync())
+                    {
+                        _allSnippets = await _snippetService.GetAllSnippetsAsync();
+                        _filteredSnippets = _allSnippets.ToList();
+                        UpdateStatistics();
+                    }
+                    else
+                    {
+                        MessageBox.Show(
+                            "The backup could not be restored.",
+                            "Snippet Database",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                    }
+                }
+            }
+            else
+            {
+                MessageBox.Show(
+                    _snippetService.LastLoadWarning,
+                    "Snippet Database",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+
+        private void CopySnippetToClipboard(string? code)
+        {
+            if (string.IsNullOrEmpty(code))
+                return;
+
+            Clipboard.SetText(code);
+            _lastCopiedText = code;
+            _clipboardClearTimer.Stop();
+            if (_settings.ClipboardClearSeconds > 0)
+            {
+                _clipboardClearTimer.Interval = TimeSpan.FromSeconds(_settings.ClipboardClearSeconds);
+                _clipboardClearTimer.Start();
+            }
+        }
+
+        private void ClipboardClearTimer_Tick(object? sender, EventArgs e)
+        {
+            _clipboardClearTimer.Stop();
             try
             {
-                System.Diagnostics.Debug.WriteLine("ForceFreshSampleDataInUI: Creating fresh sample data directly in UI");
-                
-                // Create fresh sample data directly
-                _allSnippets = new List<Snippet>
+                var current = Clipboard.GetText();
+                if (ClipboardClearPolicy.ShouldClear(_lastCopiedText, current))
                 {
-                    new Snippet(
-                        "React useState Hook",
-                        "javascript",
-                        new List<string> { "react", "hooks", "state" },
-                        "import { useState } from 'react';\n\nfunction Example() {\n  const [count, setCount] = useState(0);\n  \n  return (\n    <div>\n      <p>You clicked {count} times</p>\n      <button onClick={() => setCount(count + 1)}>\n        Click me\n      </button>\n    </div>\n  );\n}"
-                    ),
-                    new Snippet(
-                        "Python List Comprehension",
-                        "python",
-                        new List<string> { "python", "list", "comprehension" },
-                        "# Basic list comprehension\nsquares = [x**2 for x in range(10)]\n\n# With condition\neven_squares = [x**2 for x in range(10) if x % 2 == 0]\n\n# Nested comprehension\nmatrix = [[i+j for j in range(3)] for i in range(3)]"
-                    ),
-                    new Snippet(
-                        "CSS Flexbox Center",
-                        "css",
-                        new List<string> { "css", "flexbox", "layout" },
-                        ".container {\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  min-height: 100vh;\n}\n\n.item {\n  /* Your content here */\n}"
-                    ),
-                    new Snippet(
-                        "PowerShell Get-Process",
-                        "powershell",
-                        new List<string> { "PS", "powershell", "process" },
-                        "# Get all running processes\nGet-Process | Where-Object {$_.CPU -gt 10} | Sort-Object CPU -Descending\n\n# Get specific process by name\nGet-Process -Name 'notepad' -ErrorAction SilentlyContinue\n\n# Get process with custom properties\nGet-Process | Select-Object Name, Id, CPU, WorkingSet | Format-Table -AutoSize"
-                    ),
-                    new Snippet(
-                        "Java Stream API Example",
-                        "java",
-                        new List<string> { "java", "stream", "collections" },
-                        "import java.util.List;\nimport java.util.stream.Collectors;\n\n// Filter and map using streams\nList<String> names = List.of(\"Alice\", \"Bob\", \"Charlie\", \"David\");\nList<String> filteredNames = names.stream()\n    .filter(name -> name.length() > 4)\n    .map(String::toUpperCase)\n    .collect(Collectors.toList());\n\nSystem.out.println(filteredNames); // [ALICE, CHARLIE, DAVID]"
-                    )
-                };
-                
-                // Update filtered snippets
-                _filteredSnippets = _allSnippets.ToList();
-                
-                System.Diagnostics.Debug.WriteLine($"ForceFreshSampleDataInUI: Created {_allSnippets.Count} fresh sample snippets");
-                foreach (var snippet in _allSnippets)
-                {
-                    System.Diagnostics.Debug.WriteLine($"  - {snippet.Title}: [{string.Join(", ", snippet.Tags ?? new List<string>())}]");
+                    Clipboard.Clear();
                 }
-                
-                // Update UI immediately using direct manipulation
-                UpdateSnippetsDisplayDirect();
-                
-                // CRITICAL: Apply current theme to maintain dark mode consistency
-                if (_isDarkTheme)
-                {
-                    System.Diagnostics.Debug.WriteLine("Applying dark theme to maintain consistency after sample data refresh");
-                    UpdateSnippetElementsTheme(true);
-                }
-                
-                System.Diagnostics.Debug.WriteLine("ForceFreshSampleDataInUI: UI updated with fresh sample data");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in ForceFreshSampleDataInUI: {ex.Message}");
+                // Clipboard may be locked by another application; leave it unchanged.
             }
         }
 
@@ -2080,7 +2100,7 @@ namespace CopyPastaNative
             {
                 try
                 {
-                    Clipboard.SetText(snippet.Code);
+                    CopySnippetToClipboard(snippet.Code);
                     // Copy operation successful - no need for error handling or snackbar
                 }
                 catch (Exception ex)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using CopyPastaNative.Models;
+using CopyPastaNative.Security;
 
 namespace CopyPastaNative
 {
@@ -102,19 +103,16 @@ namespace CopyPastaNative
 
         private bool ValidateInput()
         {
-            if (string.IsNullOrWhiteSpace(TitleTextBox.Text))
-            {
-                MessageBox.Show("Please enter a title for the snippet.", "Validation Error", 
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
-                TitleTextBox.Focus();
-                return false;
-            }
+            var error = SnippetValidator.ValidateFieldLengths(
+                TitleTextBox.Text.Trim(),
+                LanguageComboBox.SelectedItem?.ToString(),
+                ParseTags(TagsTextBox.Text),
+                CodeTextBox.Text);
 
-            if (string.IsNullOrWhiteSpace(CodeTextBox.Text))
+            if (error != null)
             {
-                MessageBox.Show("Please enter some code for the snippet.", "Validation Error", 
+                MessageBox.Show(error, "Validation Error",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
-                CodeTextBox.Focus();
                 return false;
             }
 

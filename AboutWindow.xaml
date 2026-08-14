@@ -1,0 +1,41 @@
+<Window x:Class="CopyPastaNative.AboutWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="About CopyPasta"
+        Height="560" Width="560"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="{DynamicResource MaterialDesignPaper}"
+        TextElement.Foreground="{DynamicResource MaterialDesignBody}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock x:Name="TitleText" FontSize="22" FontWeight="Bold" Text="CopyPasta"/>
+            <TextBlock x:Name="VersionText" Margin="0,4,0,0" Text="Version 0.3.0"/>
+            <TextBlock x:Name="DataPathText" Margin="0,8,0,0" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <TextBlock TextWrapping="Wrap" LineHeight="20">
+                CopyPasta stores snippets locally as plaintext JSON. It is a snippet manager, not a password manager, and is not intended to store secrets.
+                Do not store passwords, API keys, OAuth or session tokens, service-account credentials, client secrets, private keys, BitLocker recovery keys, connection strings that contain credentials, or certificates that contain private keys.
+                Snippet files and exports are not encrypted.
+            </TextBlock>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Margin="0,16,0,12">
+            <TextBlock Text="Clear copied snippet after" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <ComboBox x:Name="ClipboardClearComboBox" Width="280" HorizontalAlignment="Left"/>
+            <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" FontSize="12"
+                       Text="Off by default. When enabled, CopyPasta clears the clipboard only if it still contains the exact text it copied."/>
+        </StackPanel>
+
+        <Button Grid.Row="3" Content="Close" Width="100" HorizontalAlignment="Right" IsDefault="True" Click="CloseButton_Click"/>
+    </Grid>
+</Window>

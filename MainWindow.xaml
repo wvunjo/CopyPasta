@@ -19,10 +19,8 @@
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml" />
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Defaults.xaml" />
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignColors;component/Themes/Recommended/Primary/MaterialDesignColor.Blue.xaml" />
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignColors;component/Themes/Recommended/Accent/MaterialDesignColor.LightBlue.xaml" />
+                <materialDesign:BundledTheme BaseTheme="Light" PrimaryColor="Blue" SecondaryColor="LightBlue" />
+                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesign2.Defaults.xaml" />
             </ResourceDictionary.MergedDictionaries>
             
             <!-- Local Converters -->
@@ -80,9 +78,23 @@
                             Foreground="White"
                             FontSize="16"
                             FontWeight="Bold"
-                            Margin="0,0,50,0"
+                            Margin="0,0,8,0"
                             Click="ThemeToggleButton_Click">
                         🌙
+                    </Button>
+
+                    <Button x:Name="AboutButton"
+                            ToolTip="About and security notice"
+                            Width="60" Height="48"
+                            Background="Transparent"
+                            BorderBrush="White"
+                            BorderThickness="2"
+                            Foreground="White"
+                            FontSize="16"
+                            FontWeight="Bold"
+                            Margin="0,0,50,0"
+                            Click="AboutButton_Click">
+                        ℹ
                     </Button>
                     
                     <Button x:Name="NewSnippetButton" 

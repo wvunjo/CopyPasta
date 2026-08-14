@@ -1,10 +1,14 @@
-# CopyPasta Native v0.2
+# CopyPasta Native v0.3
 
 A native Windows code snippet manager built with C# WPF and Material Design.
 
 ## 🚀 **What This Is**
 
 CopyPasta Native is a personal code snippet manager that functions as a developer-friendly knowledge base. It allows you to store, edit, tag, and copy code snippets across various programming languages with advanced features for power users.
+
+**CopyPasta is not a password manager.** Snippets are stored locally as plaintext JSON and are **not encrypted**. Do not store passwords, API keys, OAuth or session tokens, service-account credentials, client secrets, private keys, BitLocker recovery keys, connection strings containing credentials, or certificates containing private keys.
+
+CopyPasta does not require network connectivity for normal operation.
 
 ## ✨ **Features**
 
@@ -13,9 +17,10 @@ CopyPasta Native is a personal code snippet manager that functions as a develope
 - **Support for 60+ programming languages** (HTML, CSS, JavaScript, Python, C#, Java, and many more)
 - **Tag-based organization** for easy categorization and filtering
 - **Search functionality** to find snippets quickly by title, language, or tags
-- **Copy-to-clipboard** with one click
-- **Local JSON storage** - your data stays on your machine
+- **Copy-to-clipboard** with one click (optional auto-clear, off by default)
+- **Local JSON storage** - your data stays on your machine under `%APPDATA%\CopyPasta`
 - **Modern Material Design UI** with beautiful, intuitive interface
+- **About dialog** - version, storage path, and security notice
 
 ### **Advanced Features**
 - **🔍 Search History** - Keeps track of your last 10 searches for quick access
@@ -36,39 +41,27 @@ CopyPasta Native is a personal code snippet manager that functions as a develope
 - **Theme Persistence** - Maintains your preference across all operations
 - **Visual Scrollbar** - Always visible, theme-aware scrollbar indicator
 
-## 🆕 **What's New in v0.2**
+## 🆕 **What's New in v0.3**
 
-### **Major Features Added**
-- **✨ Syntax Highlighting** - Full code syntax highlighting using AvalonEdit for 60+ languages
-- **📥 Export/Import Functionality** - Backup and restore your snippet collection
-- **⭐ Favorites System** - Star snippets for quick access with dedicated filter
-- **⌨️ Comprehensive Keyboard Shortcuts**:
-  - `Ctrl+F` - Focus search box
-  - `Ctrl+N` - New snippet
-  - `Ctrl+C` - Copy snippet code
-  - `Ctrl+A` - Select all (multi-select mode)
-  - `Ctrl+D` - Deselect all (multi-select mode)
-  - `Delete` - Delete selected snippet
-  - `Enter` - Copy and move to next
-  - `Esc` - Clear filters
-  - `↑↓` - Navigate snippets
-- **🔍 Duplicate Detection** - Intelligent similarity checking to prevent duplicates
-- **📊 Statistics Panel** - Real-time snippet analytics
-- **🎯 Multi-Select & Bulk Actions**:
-  - Select multiple snippets
-  - Bulk delete
-  - Visual selection indicators
-  - Selection counter
-- **📚 Search History** - Last 10 searches for quick re-access
-- **🖱️ Enhanced Scrolling** - Smooth, incremental mouse wheel scrolling
-- **🎨 Improved Theme Support** - Visible scrollbar and consistent theming
+Enterprise-hardened release. Existing v0.2 snippet features are unchanged; this version reduces attack surface and makes the app easier to evaluate on managed Windows endpoints.
 
-### **Technical Improvements**
-- Integrated AvalonEdit for advanced code editing
-- Implemented Levenshtein distance algorithm for duplicate detection
-- Enhanced theme management with scrollbar visibility
-- Improved UI responsiveness for bulk operations
-- Optimized scrolling performance
+### **Security and reliability**
+- **.NET 10** Windows/WPF target (self-contained publish no longer ships the old .NET 8 runtime)
+- **Unsafe BinaryFormatter compatibility disabled**
+- **JSON import treated as untrusted input** — no arbitrary .NET types, file-size / snippet-count / field-length limits, invalid files rejected without touching the live database
+- **Atomic saves** to `%APPDATA%\CopyPasta\snippets.json` with one previous backup (`snippets.json.bak`)
+- **No silent save failures** — the user is told if persistence fails
+- **Runs as a standard user** (`asInvoker`) — no administrator privileges
+- **About dialog (ℹ)** with version `0.3.0`, data path, and a warning not to store secrets
+- **Optional clipboard auto-clear** (off by default) — clears only if the clipboard still holds the exact text CopyPasta copied
+- **`SECURITY.md`** documenting what CopyPasta does and does not do
+
+### **Build and release**
+- Local release script: `scripts/Release-CopyPasta.ps1` (clean, test, vulnerability audit, publish, SHA-256)
+- Unit tests for import validation, atomic save/backup, and clipboard-clear policy
+- Visual Studio is **not required** to produce a release `.exe`
+
+v0.2 feature work (syntax highlighting, export/import, favorites, shortcuts, duplicate detection, statistics, multi-select) remains in this build. See Version History below.
 
 ## ⌨️ **Keyboard Shortcuts**
 
@@ -103,7 +96,7 @@ Enable multi-select mode to perform bulk operations:
 
 ## 🛠 **Tech Stack**
 
-- **Framework**: .NET 8.0 WPF
+- **Framework**: .NET 10 WPF
 - **UI**: Material Design for WPF
 - **Code Editor**: ICSharpCode.AvalonEdit
 - **Storage**: Local JSON files (stored in `%APPDATA%\CopyPasta\`)
@@ -114,31 +107,59 @@ Enable multi-select mode to perform bulk operations:
 ```
 CopyPastaNative/
 ├── Models/
-│   └── Snippet.cs              # Data model for code snippets
+│   └── Snippet.cs                 # Data model for code snippets
 ├── Services/
-│   └── SnippetService.cs       # Data persistence, CRUD, and duplicate detection
+│   ├── SnippetService.cs          # Persistence, CRUD, duplicate detection
+│   ├── AppSettings.cs             # Local preference model
+│   └── SettingsService.cs         # settings.json load/save
+├── Security/
+│   ├── SnippetJson.cs             # Safe JSON serializer settings
+│   ├── SnippetLimits.cs           # Import/size bounds
+│   ├── SnippetValidator.cs        # Untrusted import validation
+│   └── ClipboardClearPolicy.cs    # Exact-match clipboard clear
 ├── Converters/
-│   └── CountToVisibilityConverter.cs  # WPF value converter
-├── MainWindow.xaml              # Main application window
-├── SnippetDialog.xaml           # Add/edit snippet dialog
-├── App.xaml                     # Application resources
-└── CopyPastaNative.csproj      # Project file
+│   └── CountToVisibilityConverter.cs
+├── CopyPastaNative.Tests/         # xUnit tests
+├── scripts/
+│   └── Release-CopyPasta.ps1      # Local Release publish + hashes
+├── AboutWindow.xaml               # Version, storage path, security notice
+├── MainWindow.xaml                # Main application window
+├── SnippetDialog.xaml             # Add/edit snippet dialog
+├── App.xaml                       # Application resources
+├── app.manifest                   # asInvoker (no elevation)
+├── SECURITY.md                    # Security policy
+├── README.md
+└── CopyPastaNative.csproj
 ```
 
 ## 🚀 **Getting Started**
 
 ### **Prerequisites**
 - Windows 10/11
-- .NET 8.0 Runtime (or Visual Studio 2022)
+- A published **self-contained** release does **not** require Visual Studio or a separate .NET install
+- Building from source requires the **.NET 10 SDK**
 
 ### **Installation**
-1. Download the latest release
-2. Extract to your preferred location
-3. Run `CopyPastaNative.exe`
+1. Download the latest GitHub release zip
+2. Verify the published SHA-256 hash if you are evaluating the build for a managed endpoint
+3. Extract to your preferred location
+4. Run `CopyPastaNative.exe` as a standard user (do not Run as administrator)
 
 ### **First Run**
 - The app will create sample snippets to get you started
-- Data is automatically saved to `%APPDATA%\CopyPasta\snippets.json`
+- Data is saved under `%APPDATA%\CopyPasta\`:
+  - `snippets.json` — active snippet database
+  - `snippets.json.bak` — previous valid database after a successful save
+  - `settings.json` — local preferences (clipboard auto-clear)
+
+### **Building a release from source**
+From the repository root (no Visual Studio required):
+
+```powershell
+.\scripts\Release-CopyPasta.ps1
+```
+
+Output is written to `artifacts\CopyPasta_v0.3.0\` plus `CopyPasta_v0.3.0.zip` and `artifacts\RELEASE_HASHES.md`.
 
 ## 💡 **Usage Guide**
 
@@ -153,7 +174,7 @@ CopyPastaNative/
 1. **Search**: Type in the search box to find snippets by title, language, or content
 2. **Tag Filter**: Click on tag buttons to filter by category
 3. **Favorites Only**: Check "Show Favorites Only" to see starred snippets
-4. **History**: Your last 10 searches appear in the Recent Searches panel**
+4. **History**: Your last 10 searches appear in the Recent Searches panel
 
 ### **Multi-Select Mode**
 1. Enable "Multi-Select Mode" checkbox
@@ -163,11 +184,16 @@ CopyPastaNative/
 
 ### **Export/Import**
 1. **Export**: Click "Export Snippets" to save your collection as JSON
-2. **Import**: Click "Import Snippets" to load a backup (with merge option)
+2. **Import**: Click "Import Snippets" to load a backup (replace or add)
+3. Imports are validated (size, count, field lengths). Malformed files are rejected and do not change your live database. Imported snippet text is never executed.
+
+### **About and clipboard auto-clear**
+- Click **ℹ** in the header for version, storage location, and the secret-storage warning
+- Clipboard auto-clear is **off by default**. If enabled, CopyPasta clears the clipboard only when it still contains the exact snippet it copied
 
 ### **Theme Toggle**
 - Click the moon/sun icon to switch between dark and light themes
-- Theme preference is maintained across all operations
+- Theme preference is maintained across all operations in the current session
 
 ## 📝 **Data Format**
 
@@ -187,7 +213,15 @@ Snippets are stored with the following structure:
 
 ## 🔄 **Version History**
 
-### **v0.2** (Current)
+### **v0.3** (Current)
+- Targeted .NET 10; disabled unsafe BinaryFormatter compatibility
+- Hardened JSON import (bounds, no type-name deserialization)
+- Atomic AppData saves with one local backup
+- About dialog, secret-storage warning, `SECURITY.md`
+- Optional clipboard auto-clear (off by default)
+- Local release script and unit tests; Visual Studio not required to publish
+
+### **v0.2**
 - Added syntax highlighting with AvalonEdit
 - Implemented export/import functionality
 - Added favorites system with filtering
@@ -206,15 +240,24 @@ Snippets are stored with the following structure:
 - Improved UI responsiveness
 - Enhanced theme persistence
 
+## Enterprise / Security Characteristics
+
+- Runs entirely in the user's context
+- Does not require administrator privileges
+- Does not install a service
+- Does not establish persistence
+- Does not execute stored snippets
+- Does not require network connectivity
+- Does not contain telemetry
+- Stores snippets locally under `%APPDATA%\CopyPasta`
+- Snippet database and exports are plaintext
+- Should not be used for storing credentials or secrets
+
+See [SECURITY.md](SECURITY.md) for the full security policy, import behavior, and vulnerability reporting process.
+
 ## 🌟 **What's Next (Future Versions)**
 
-- Plugin system for extensions
-- Cloud sync option
-- Multiple snippet collections/folders
-- Advanced search with regular expressions
-- Snippet templates
-- Command-line interface
-- Portable version
+v0.3 is an enterprise-hardening release. Features that increase attack surface (plugins, cloud sync, snippet execution, automatic updates) are intentionally out of scope.
 
 ## 📄 **License**
 
@@ -226,6 +269,6 @@ This is currently a personal project, but contributions are welcome! Feel free t
 
 ---
 
-**Version**: 0.2  
-**Release Date**: October 2025  
-**Status**: Stable Release - Feature Complete with Advanced Functionality
+**Version**: 0.3.0  
+**Release Date**: August 2026  
+**Status**: Enterprise-Hardened local snippet manager

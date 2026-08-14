@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using CopyPastaNative.Models;
+using CopyPastaNative.Security;
 using Newtonsoft.Json;
 
 namespace CopyPastaNative.Services
@@ -11,44 +12,49 @@ namespace CopyPastaNative.Services
     public class SnippetService
     {
         private readonly string _filePath;
+        private readonly string _backupPath;
         private List<Snippet> _snippets = new();
+        private bool _isLoaded;
+
+        public string DataDirectory { get; }
+        public string SnippetsFilePath => _filePath;
+        public string BackupFilePath => _backupPath;
+        public string? LastLoadWarning { get; private set; }
+        public bool BackupExists => File.Exists(_backupPath);
 
         public SnippetService()
-        {
-            _filePath = Path.Combine(
+            : this(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "CopyPasta",
-                "snippets.json"
-            );
-            
-            // Ensure directory exists
-            var directory = Path.GetDirectoryName(_filePath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
+                "CopyPasta"))
+        {
+        }
+
+        public SnippetService(string dataDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(dataDirectory))
+                throw new ArgumentException("Data directory is required.", nameof(dataDirectory));
+
+            DataDirectory = dataDirectory;
+            _filePath = Path.Combine(dataDirectory, "snippets.json");
+            _backupPath = Path.Combine(dataDirectory, "snippets.json.bak");
+
+            Directory.CreateDirectory(dataDirectory);
         }
 
         public async Task<List<Snippet>> GetAllSnippetsAsync()
         {
-            if (_snippets.Count == 0)
+            if (!_isLoaded)
             {
                 await LoadSnippetsAsync();
             }
-            
-            // Debug: Log what snippets we have
+
             System.Diagnostics.Debug.WriteLine($"GetAllSnippetsAsync: Returning {_snippets.Count} snippets");
-            foreach (var snippet in _snippets)
-            {
-                System.Diagnostics.Debug.WriteLine($"  - {snippet.Title}: [{string.Join(", ", snippet.Tags ?? new List<string>())}]");
-            }
-            
             return _snippets.ToList();
         }
 
         public async Task<Snippet?> GetSnippetByIdAsync(string id)
         {
-            if (_snippets.Count == 0)
+            if (!_isLoaded)
             {
                 await LoadSnippetsAsync();
             }
@@ -57,6 +63,9 @@ namespace CopyPastaNative.Services
 
         public async Task AddSnippetAsync(Snippet snippet)
         {
+            if (!SnippetValidator.TryValidateSnippet(snippet, out var error))
+                throw new InvalidOperationException(error);
+
             snippet.UpdatedAt = DateTime.Now;
             _snippets.Add(snippet);
             await SaveSnippetsAsync();
@@ -64,6 +73,9 @@ namespace CopyPastaNative.Services
 
         public async Task UpdateSnippetAsync(Snippet snippet)
         {
+            if (!SnippetValidator.TryValidateSnippet(snippet, out var error))
+                throw new InvalidOperationException(error);
+
             var existing = _snippets.FirstOrDefault(s => s.Id == snippet.Id);
             if (existing != null)
             {
@@ -87,9 +99,22 @@ namespace CopyPastaNative.Services
             }
         }
 
+        public async Task ReplaceAllSnippetsAsync(IEnumerable<Snippet> snippets)
+        {
+            var next = snippets.ToList();
+            foreach (var snippet in next)
+            {
+                if (!SnippetValidator.TryValidateSnippet(snippet, out var error))
+                    throw new InvalidOperationException(error);
+            }
+
+            _snippets = next;
+            await SaveSnippetsAsync();
+        }
+
         public async Task<List<Snippet>> SearchSnippetsAsync(string searchTerm)
         {
-            if (_snippets.Count == 0)
+            if (!_isLoaded)
             {
                 await LoadSnippetsAsync();
             }
@@ -107,7 +132,7 @@ namespace CopyPastaNative.Services
 
         public async Task<List<Snippet>> GetSnippetsByTagsAsync(List<string> tags)
         {
-            if (_snippets.Count == 0)
+            if (!_isLoaded)
             {
                 await LoadSnippetsAsync();
             }
@@ -115,7 +140,7 @@ namespace CopyPastaNative.Services
             if (tags == null || tags.Count == 0)
                 return _snippets.ToList();
 
-            return _snippets.Where(s => 
+            return _snippets.Where(s =>
                 s.Tags != null && tags.All(tag => s.Tags.Contains(tag))
             ).ToList();
         }
@@ -124,21 +149,19 @@ namespace CopyPastaNative.Services
         {
             try
             {
-                // Safety check - return empty list if no snippets
                 if (_snippets == null || _snippets.Count == 0)
                     return new List<string>();
-                    
+
                 return _snippets
-                    .Where(s => s.Tags != null) // Filter out snippets with null tags
+                    .Where(s => s.Tags != null)
                     .SelectMany(s => s.Tags)
-                    .Where(tag => !string.IsNullOrEmpty(tag)) // Filter out null/empty tags
+                    .Where(tag => !string.IsNullOrEmpty(tag))
                     .Distinct()
                     .OrderBy(t => t)
                     .ToList();
             }
             catch (Exception ex)
             {
-                // Log error and return empty list instead of crashing
                 System.Diagnostics.Debug.WriteLine($"Error getting all tags: {ex.Message}");
                 return new List<string>();
             }
@@ -146,7 +169,7 @@ namespace CopyPastaNative.Services
 
         public async Task<List<Snippet>> FindPotentialDuplicatesAsync(Snippet newSnippet)
         {
-            if (_snippets.Count == 0)
+            if (!_isLoaded)
             {
                 await LoadSnippetsAsync();
             }
@@ -155,23 +178,21 @@ namespace CopyPastaNative.Services
                 return new List<Snippet>();
 
             var potentialDuplicates = new List<Snippet>();
-            
+
             foreach (var existingSnippet in _snippets)
             {
-                // Skip if it's the same snippet (when editing)
                 if (existingSnippet.Id == newSnippet.Id)
                     continue;
 
                 double similarity = CalculateSimilarity(existingSnippet, newSnippet);
-                
-                // Consider it a potential duplicate if similarity is >= 70%
+
                 if (similarity >= 0.70)
                 {
                     potentialDuplicates.Add(existingSnippet);
                 }
             }
 
-            return potentialDuplicates.OrderByDescending(s => 
+            return potentialDuplicates.OrderByDescending(s =>
                 CalculateSimilarity(s, newSnippet)
             ).ToList();
         }
@@ -181,22 +202,20 @@ namespace CopyPastaNative.Services
             double totalSimilarity = 0.0;
             int checks = 0;
 
-            // Compare titles (40% weight)
             if (!string.IsNullOrWhiteSpace(snippet1.Title) && !string.IsNullOrWhiteSpace(snippet2.Title))
             {
                 double titleSimilarity = CalculateStringSimilarity(
-                    snippet1.Title.ToLowerInvariant(), 
+                    snippet1.Title.ToLowerInvariant(),
                     snippet2.Title.ToLowerInvariant()
                 );
                 totalSimilarity += titleSimilarity * 0.4;
                 checks++;
             }
 
-            // Compare code content (60% weight)
             if (!string.IsNullOrWhiteSpace(snippet1.Code) && !string.IsNullOrWhiteSpace(snippet2.Code))
             {
                 double codeSimilarity = CalculateStringSimilarity(
-                    snippet1.Code.ToLowerInvariant(), 
+                    snippet1.Code.ToLowerInvariant(),
                     snippet2.Code.ToLowerInvariant()
                 );
                 totalSimilarity += codeSimilarity * 0.6;
@@ -214,14 +233,13 @@ namespace CopyPastaNative.Services
             if (str1.Equals(str2, StringComparison.OrdinalIgnoreCase))
                 return 1.0;
 
-            // Use Levenshtein distance for similarity calculation
             int maxLength = Math.Max(str1.Length, str2.Length);
             if (maxLength == 0)
                 return 1.0;
 
             int distance = LevenshteinDistance(str1, str2);
             double similarity = 1.0 - ((double)distance / maxLength);
-            
+
             return Math.Max(0.0, similarity);
         }
 
@@ -258,145 +276,105 @@ namespace CopyPastaNative.Services
             return d[n, m];
         }
 
-        public async Task ForceReloadSampleData()
+        public async Task ResetToSampleDataAsync()
         {
-            try
-            {
-                System.Diagnostics.Debug.WriteLine("ForceReloadSampleData: Deleting existing snippets.json");
-                
-                // Delete existing file to force recreation
-                if (File.Exists(_filePath))
-                {
-                    File.Delete(_filePath);
-                    System.Diagnostics.Debug.WriteLine("Deleted existing snippets.json");
-                }
-                
-                // Clear in-memory snippets
-                _snippets.Clear();
-                
-                // Reload with sample data
-                await LoadSnippetsAsync();
-                
-                System.Diagnostics.Debug.WriteLine($"ForceReloadSampleData: Loaded {_snippets.Count} sample snippets");
-                foreach (var snippet in _snippets)
-                {
-                    System.Diagnostics.Debug.WriteLine($"  - {snippet.Title}: [{string.Join(", ", snippet.Tags ?? new List<string>())}]");
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error in ForceReloadSampleData: {ex.Message}");
-            }
+            _snippets = CreateSampleSnippets();
+            await SaveSnippetsAsync();
         }
 
-        public async Task ForceDeleteAndReload()
+        public async Task<bool> RestoreBackupAsync()
         {
-            try
-            {
-                System.Diagnostics.Debug.WriteLine("ForceDeleteAndReload: Starting complete data reset");
-                
-                // Delete existing file
-                if (File.Exists(_filePath))
-                {
-                    File.Delete(_filePath);
-                    System.Diagnostics.Debug.WriteLine("Deleted existing snippets.json");
-                }
-                
-                // Clear in-memory snippets
-                _snippets.Clear();
-                
-                // Create fresh sample data
-                _snippets = CreateSampleSnippets();
-                
-                // Save to file
-                await SaveSnippetsAsync();
-                
-                System.Diagnostics.Debug.WriteLine($"ForceDeleteAndReload: Created {_snippets.Count} fresh sample snippets");
-                foreach (var snippet in _snippets)
-                {
-                    System.Diagnostics.Debug.WriteLine($"  - {snippet.Title}: [{string.Join(", ", snippet.Tags ?? new List<string>())}]");
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error in ForceDeleteAndReload: {ex.Message}");
-            }
+            if (!File.Exists(_backupPath))
+                return false;
+
+            File.Copy(_backupPath, _filePath, overwrite: true);
+            _isLoaded = false;
+            _snippets.Clear();
+            await LoadSnippetsAsync();
+            return string.IsNullOrEmpty(LastLoadWarning) || _snippets.Count > 0;
         }
 
-        public void ForceFreshSampleData()
+        public async Task LoadSnippetsAsync()
         {
-            try
-            {
-                System.Diagnostics.Debug.WriteLine("ForceFreshSampleData: Forcing immediate use of fresh sample data");
-                
-                // Clear in-memory snippets
-                _snippets.Clear();
-                
-                // Create fresh sample data immediately
-                _snippets = CreateSampleSnippets();
-                
-                System.Diagnostics.Debug.WriteLine($"ForceFreshSampleData: Created {_snippets.Count} fresh sample snippets");
-                foreach (var snippet in _snippets)
-                {
-                    System.Diagnostics.Debug.WriteLine($"  - {snippet.Title}: [{string.Join(", ", snippet.Tags ?? new List<string>())}]");
-                }
-                
-                // Force save to file
-                _ = Task.Run(async () => await SaveSnippetsAsync());
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error in ForceFreshSampleData: {ex.Message}");
-            }
-        }
+            LastLoadWarning = null;
 
-        private async Task LoadSnippetsAsync()
-        {
             try
             {
-                System.Diagnostics.Debug.WriteLine($"LoadSnippetsAsync: Checking file at {_filePath}");
-                
-                if (File.Exists(_filePath))
+                if (!File.Exists(_filePath))
                 {
-                    System.Diagnostics.Debug.WriteLine("LoadSnippetsAsync: Loading existing snippets.json");
-                    var json = await File.ReadAllTextAsync(_filePath);
-                    _snippets = JsonConvert.DeserializeObject<List<Snippet>>(json) ?? new List<Snippet>();
-                    System.Diagnostics.Debug.WriteLine($"LoadSnippetsAsync: Loaded {_snippets.Count} snippets from file");
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("LoadSnippetsAsync: File not found, creating sample snippets");
-                    // Create sample snippets for first-time users
                     _snippets = CreateSampleSnippets();
+                    _isLoaded = true;
                     await SaveSnippetsAsync();
-                    System.Diagnostics.Debug.WriteLine($"LoadSnippetsAsync: Created and saved {_snippets.Count} sample snippets");
+                    return;
                 }
-                
-                // Debug: Log all snippets
-                System.Diagnostics.Debug.WriteLine($"LoadSnippetsAsync: Final snippet count: {_snippets.Count}");
-                foreach (var snippet in _snippets)
+
+                var json = await File.ReadAllTextAsync(_filePath);
+                List<Snippet>? loaded;
+                try
                 {
-                    System.Diagnostics.Debug.WriteLine($"  - {snippet.Title}: [{string.Join(", ", snippet.Tags ?? new List<string>())}]");
+                    loaded = JsonConvert.DeserializeObject<List<Snippet>>(json, SnippetJson.Settings);
+                }
+                catch (JsonException)
+                {
+                    _snippets = new List<Snippet>();
+                    _isLoaded = true;
+                    LastLoadWarning = "The snippet database could not be read because it is not valid JSON. Existing data was left unchanged.";
+                    return;
+                }
+
+                if (loaded == null)
+                {
+                    _snippets = new List<Snippet>();
+                    _isLoaded = true;
+                    LastLoadWarning = "The snippet database did not contain a snippet list. Existing data was left unchanged.";
+                    return;
+                }
+
+                var accepted = new List<Snippet>();
+                var rejected = 0;
+                foreach (var snippet in loaded)
+                {
+                    if (SnippetValidator.TryValidateSnippet(snippet, out _))
+                    {
+                        snippet.Tags ??= new List<string>();
+                        accepted.Add(snippet);
+                    }
+                    else
+                    {
+                        rejected++;
+                    }
+                }
+
+                _snippets = accepted;
+                _isLoaded = true;
+                if (rejected > 0)
+                {
+                    LastLoadWarning = $"{rejected} snippet(s) in the local database were skipped because they failed validation.";
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"LoadSnippetsAsync: Error occurred: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine("LoadSnippetsAsync: Falling back to sample snippets");
-                _snippets = CreateSampleSnippets();
+                _snippets = new List<Snippet>();
+                _isLoaded = true;
+                LastLoadWarning = "The snippet database could not be opened. Existing data was left unchanged.";
+                System.Diagnostics.Debug.WriteLine($"LoadSnippetsAsync: {ex.GetType().Name}");
             }
         }
 
-        private async Task SaveSnippetsAsync()
+        public async Task SaveSnippetsAsync()
         {
-            try
+            var json = JsonConvert.SerializeObject(_snippets, SnippetJson.Settings);
+            var tempPath = _filePath + ".tmp";
+
+            await File.WriteAllTextAsync(tempPath, json);
+
+            if (File.Exists(_filePath))
             {
-                var json = JsonConvert.SerializeObject(_snippets, Formatting.Indented);
-                await File.WriteAllTextAsync(_filePath, json);
+                File.Replace(tempPath, _filePath, _backupPath);
             }
-            catch (Exception)
+            else
             {
-                // Handle save errors
+                File.Move(tempPath, _filePath);
             }
         }
 

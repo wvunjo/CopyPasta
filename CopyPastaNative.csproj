@@ -2,26 +2,36 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
     <AssemblyTitle>CopyPasta - Code Snippet Manager</AssemblyTitle>
     <AssemblyDescription>Personal code snippet manager for developers</AssemblyDescription>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>0.3.0</Version>
+    <AssemblyVersion>0.3.0.0</AssemblyVersion>
+    <FileVersion>0.3.0.0</FileVersion>
+    <InformationalVersion>0.3.0</InformationalVersion>
+    <Deterministic>true</Deterministic>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="MaterialDesignThemes" Version="4.9.0" />
-    <PackageReference Include="MaterialDesignColors" Version="2.1.4" />
+    <RuntimeHostConfigurationOption Include="System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization" Value="false" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="snippets.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="MaterialDesignThemes" Version="5.3.2" />
+    <PackageReference Include="MaterialDesignColors" Version="5.3.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="CopyPastaNative.Tests\**" />
+    <EmbeddedResource Remove="CopyPastaNative.Tests\**" />
+    <None Remove="CopyPastaNative.Tests\**" />
+    <Page Remove="CopyPastaNative.Tests\**" />
   </ItemGroup>
 
 </Project>
