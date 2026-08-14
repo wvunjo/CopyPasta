@@ -5,6 +5,7 @@
         Title="Snippet Dialog" 
         Height="600" Width="800"
         WindowStartupLocation="CenterOwner"
+        Icon="pack://application:,,,/Assets/CopyPasta.ico"
         Background="{DynamicResource MaterialDesignPaper}"
         TextElement.Foreground="{DynamicResource MaterialDesignBody}"
         TextElement.FontWeight="Regular"

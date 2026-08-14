@@ -7,6 +7,7 @@
         Title="CopyPasta - Code Snippet Manager" 
         Height="800" Width="1200"
         WindowStartupLocation="CenterScreen"
+        Icon="pack://application:,,,/Assets/CopyPasta.ico"
         Background="{DynamicResource MaterialDesignPaper}"
         TextElement.Foreground="{DynamicResource MaterialDesignBody}"
         TextElement.FontWeight="Regular"

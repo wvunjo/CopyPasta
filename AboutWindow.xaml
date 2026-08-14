@@ -4,6 +4,7 @@
         Title="About CopyPasta"
         Height="560" Width="560"
         WindowStartupLocation="CenterOwner"
+        Icon="pack://application:,,,/Assets/CopyPasta.ico"
         ResizeMode="NoResize"
         Background="{DynamicResource MaterialDesignPaper}"
         TextElement.Foreground="{DynamicResource MaterialDesignBody}">
