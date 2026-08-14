@@ -10,10 +10,10 @@ if (-not (Test-Path (Join-Path $Root 'CopyPastaNative.csproj'))) {
 
 $Project = Join-Path $Root 'CopyPastaNative.csproj'
 $TestProject = Join-Path $Root 'CopyPastaNative.Tests\CopyPastaNative.Tests.csproj'
-$PublishDir = Join-Path $Root 'artifacts\CopyPasta_v0.3.0'
-$ZipPath = Join-Path $Root 'artifacts\CopyPasta_v0.3.0.zip'
+$PublishDir = Join-Path $Root 'artifacts\CopyPasta_v0.3.1'
+$ZipPath = Join-Path $Root 'artifacts\CopyPasta_v0.3.1.zip'
 
-Write-Host "CopyPasta v0.3.0 local release" -ForegroundColor Cyan
+Write-Host "CopyPasta v0.3.1 local release" -ForegroundColor Cyan
 Write-Host "Root: $Root"
 
 function Assert-NoUnsafeBinaryFormatter([string]$RuntimeConfigPath) {
@@ -78,7 +78,7 @@ try {
     $inventory = Join-Path $Root 'artifacts\DEPENDENCIES.md'
     $packages = & dotnet package list --project $Project --include-transitive | Out-String
     @"
-# CopyPasta 0.3.0 dependency inventory
+# CopyPasta 0.3.1 dependency inventory
 
 Git commit: ``$commit``
 
@@ -89,11 +89,11 @@ $packages
 
     $notes = Join-Path $Root 'artifacts\RELEASE_HASHES.md'
     @"
-# CopyPasta v0.3.0 integrity
+# CopyPasta v0.3.1 integrity
 
 - Git commit: ``$commit``
 - CopyPastaNative.exe SHA-256: ``$exeHash``
-- CopyPasta_v0.3.0.zip SHA-256: ``$zipHash``
+- CopyPasta_v0.3.1.zip SHA-256: ``$zipHash``
 
 Do not modify binaries after these hashes are generated.
 Until Authenticode signing is available, administrators should verify these hashes.

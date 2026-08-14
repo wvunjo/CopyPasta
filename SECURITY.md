@@ -11,7 +11,7 @@ CopyPasta is a local Windows snippet manager. This document describes what the a
 
 ## What CopyPasta does
 
-- Stores code snippets as plaintext JSON under the current user's profile
+- Stores code snippets as plaintext JSON under `%LOCALAPPDATA%\CopyPasta`
 - Lets the user search, tag, favorite, export, and import snippets
 - Copies a snippet to the clipboard only when the user asks
 
@@ -30,11 +30,7 @@ CopyPasta is a local Windows snippet manager. This document describes what the a
 
 ## Local storage
 
-Application data is written only under:
-
-```text
-%APPDATA%\CopyPasta
-```
+CopyPasta stores its local database beneath the current user's `%LOCALAPPDATA%\CopyPasta` directory.
 
 Typical files:
 
@@ -42,7 +38,11 @@ Typical files:
 - `snippets.json.bak` — previous valid database after a successful save
 - `settings.json` — local preferences, including optional clipboard auto-clear
 
+If `%LOCALAPPDATA%\CopyPasta\snippets.json` is not present and a legacy database exists under `%APPDATA%\CopyPasta`, CopyPasta copies `snippets.json`, `snippets.json.bak`, and `settings.json` into LocalAppData. Existing LocalAppData data is never overwritten. Roaming originals are left in place. If that copy fails, CopyPasta continues using the roaming folder.
+
 CopyPasta does not write to `Program Files`, Windows system directories, or HKLM.
+
+A corrupt or oversized local database is not overwritten. The About dialog and load warning include the file path so the data can be recovered or restored from `snippets.json.bak`.
 
 ## Clipboard behavior
 
@@ -52,7 +52,7 @@ Optional auto-clear (off by default) removes the clipboard contents after a dela
 
 ## Network behavior
 
-CopyPasta does not require network connectivity for normal operation. There are no application-controlled HTTP clients, update checks, or cloud sync.
+CopyPasta itself performs no network synchronization or transmission. There are no application-controlled HTTP clients, update checks, or cloud sync. CopyPasta does not require network connectivity for normal operation.
 
 ## Privilege requirements
 
@@ -68,6 +68,8 @@ Exports are plaintext JSON chosen by the user. Imports are treated as untrusted 
 - Invalid files are rejected without modifying the live database
 
 Imported snippet text is never executed, interpreted, compiled, or launched.
+
+The same size, snippet-count, and field-length bounds apply when loading the local `snippets.json` database. If the file is oversized, contains too many snippets, is not valid JSON, or contains any invalid snippet, CopyPasta does not load a partial list and does not overwrite the file.
 
 ## Secret-storage warning
 

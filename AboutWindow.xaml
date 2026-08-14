@@ -17,7 +17,7 @@
 
         <StackPanel Grid.Row="0" Margin="0,0,0,12">
             <TextBlock x:Name="TitleText" FontSize="22" FontWeight="Bold" Text="CopyPasta"/>
-            <TextBlock x:Name="VersionText" Margin="0,4,0,0" Text="Version 0.3.0"/>
+            <TextBlock x:Name="VersionText" Margin="0,4,0,0" Text="Version 0.3.1"/>
             <TextBlock x:Name="DataPathText" Margin="0,8,0,0" TextWrapping="Wrap"/>
         </StackPanel>
 

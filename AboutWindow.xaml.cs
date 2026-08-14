@@ -28,7 +28,7 @@ namespace CopyPastaNative
 
             var version = Assembly.GetExecutingAssembly()
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-                ?? "0.3.0";
+                ?? "0.3.1";
 
             VersionText.Text = $"Version {version}";
             DataPathText.Text = $"Local data folder: {dataDirectory}";

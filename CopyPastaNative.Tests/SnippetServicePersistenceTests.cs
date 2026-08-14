@@ -39,7 +39,76 @@ namespace CopyPastaNative.Tests
 
             Assert.Empty(loaded);
             Assert.False(string.IsNullOrEmpty(service.LastLoadWarning));
+            Assert.Contains(path, service.LastLoadWarning);
             Assert.Equal(original, await File.ReadAllTextAsync(path));
+        }
+
+        [Fact]
+        public async Task Load_OversizedFile_FailsClosed_DoesNotReadOrOverwrite()
+        {
+            var path = Path.Combine(_dir, "snippets.json");
+            await using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                stream.SetLength(SnippetLimits.MaxDatabaseFileBytes + 1);
+            }
+
+            var service = new SnippetService(_dir);
+            var loaded = await service.GetAllSnippetsAsync();
+
+            Assert.Empty(loaded);
+            Assert.Contains("larger than", service.LastLoadWarning);
+            Assert.Contains(path, service.LastLoadWarning);
+            Assert.Equal(SnippetLimits.MaxDatabaseFileBytes + 1, new FileInfo(path).Length);
+        }
+
+        [Fact]
+        public async Task Load_TooManySnippets_FailsClosed_DoesNotOverwrite()
+        {
+            var path = Path.Combine(_dir, "snippets.json");
+            var original = BuildSnippetArrayJson(SnippetLimits.MaxSnippetsInDatabase + 1);
+            await File.WriteAllTextAsync(path, original);
+
+            var service = new SnippetService(_dir);
+            var loaded = await service.GetAllSnippetsAsync();
+
+            Assert.Empty(loaded);
+            Assert.Contains("exceeds the maximum", service.LastLoadWarning);
+            Assert.Contains(path, service.LastLoadWarning);
+            Assert.Equal(original, await File.ReadAllTextAsync(path));
+        }
+
+        [Fact]
+        public async Task Load_InvalidSnippetAmongValid_FailsClosed_DoesNotKeepPartialData()
+        {
+            var path = Path.Combine(_dir, "snippets.json");
+            var original =
+                "[{\"title\":\"ok\",\"language\":\"txt\",\"tags\":[],\"code\":\"body\"}," +
+                "{\"title\":\"" + new string('X', SnippetLimits.MaxTitleLength + 1) +
+                "\",\"language\":\"txt\",\"tags\":[],\"code\":\"body\"}]";
+            await File.WriteAllTextAsync(path, original);
+
+            var service = new SnippetService(_dir);
+            var loaded = await service.GetAllSnippetsAsync();
+
+            Assert.Empty(loaded);
+            Assert.Contains("invalid snippet data", service.LastLoadWarning);
+            Assert.Contains(path, service.LastLoadWarning);
+            Assert.Equal(original, await File.ReadAllTextAsync(path));
+        }
+
+        private static string BuildSnippetArrayJson(int count)
+        {
+            var builder = new System.Text.StringBuilder();
+            builder.Append('[');
+            for (int i = 0; i < count; i++)
+            {
+                if (i > 0)
+                    builder.Append(',');
+                builder.Append("{\"title\":\"t").Append(i).Append("\",\"language\":\"txt\",\"tags\":[],\"code\":\"x\"}");
+            }
+
+            builder.Append(']');
+            return builder.ToString();
         }
 
         [Fact]

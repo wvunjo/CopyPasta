@@ -23,9 +23,7 @@ namespace CopyPastaNative.Services
         public bool BackupExists => File.Exists(_backupPath);
 
         public SnippetService()
-            : this(Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "CopyPasta"))
+            : this(DataDirectoryResolver.Resolve())
         {
         }
 
@@ -177,103 +175,24 @@ namespace CopyPastaNative.Services
             if (newSnippet == null)
                 return new List<Snippet>();
 
-            var potentialDuplicates = new List<Snippet>();
+            var potentialDuplicates = new List<(Snippet Snippet, double Similarity)>();
 
             foreach (var existingSnippet in _snippets)
             {
                 if (existingSnippet.Id == newSnippet.Id)
                     continue;
 
-                double similarity = CalculateSimilarity(existingSnippet, newSnippet);
-
-                if (similarity >= 0.70)
+                double similarity = SnippetDuplicateDetector.CalculateSimilarity(existingSnippet, newSnippet);
+                if (similarity >= SnippetLimits.DuplicateSimilarityThreshold)
                 {
-                    potentialDuplicates.Add(existingSnippet);
+                    potentialDuplicates.Add((existingSnippet, similarity));
                 }
             }
 
-            return potentialDuplicates.OrderByDescending(s =>
-                CalculateSimilarity(s, newSnippet)
-            ).ToList();
-        }
-
-        private double CalculateSimilarity(Snippet snippet1, Snippet snippet2)
-        {
-            double totalSimilarity = 0.0;
-            int checks = 0;
-
-            if (!string.IsNullOrWhiteSpace(snippet1.Title) && !string.IsNullOrWhiteSpace(snippet2.Title))
-            {
-                double titleSimilarity = CalculateStringSimilarity(
-                    snippet1.Title.ToLowerInvariant(),
-                    snippet2.Title.ToLowerInvariant()
-                );
-                totalSimilarity += titleSimilarity * 0.4;
-                checks++;
-            }
-
-            if (!string.IsNullOrWhiteSpace(snippet1.Code) && !string.IsNullOrWhiteSpace(snippet2.Code))
-            {
-                double codeSimilarity = CalculateStringSimilarity(
-                    snippet1.Code.ToLowerInvariant(),
-                    snippet2.Code.ToLowerInvariant()
-                );
-                totalSimilarity += codeSimilarity * 0.6;
-                checks++;
-            }
-
-            return checks > 0 ? totalSimilarity : 0.0;
-        }
-
-        private double CalculateStringSimilarity(string str1, string str2)
-        {
-            if (string.IsNullOrEmpty(str1) || string.IsNullOrEmpty(str2))
-                return 0.0;
-
-            if (str1.Equals(str2, StringComparison.OrdinalIgnoreCase))
-                return 1.0;
-
-            int maxLength = Math.Max(str1.Length, str2.Length);
-            if (maxLength == 0)
-                return 1.0;
-
-            int distance = LevenshteinDistance(str1, str2);
-            double similarity = 1.0 - ((double)distance / maxLength);
-
-            return Math.Max(0.0, similarity);
-        }
-
-        private int LevenshteinDistance(string str1, string str2)
-        {
-            int n = str1.Length;
-            int m = str2.Length;
-            int[,] d = new int[n + 1, m + 1];
-
-            if (n == 0)
-                return m;
-            if (m == 0)
-                return n;
-
-            for (int i = 0; i <= n; i++)
-                d[i, 0] = i;
-
-            for (int j = 0; j <= m; j++)
-                d[0, j] = j;
-
-            for (int i = 1; i <= n; i++)
-            {
-                for (int j = 1; j <= m; j++)
-                {
-                    int cost = (str2[j - 1] == str1[i - 1]) ? 0 : 1;
-
-                    d[i, j] = Math.Min(
-                        Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
-                        d[i - 1, j - 1] + cost
-                    );
-                }
-            }
-
-            return d[n, m];
+            return potentialDuplicates
+                .OrderByDescending(item => item.Similarity)
+                .Select(item => item.Snippet)
+                .ToList();
         }
 
         public async Task ResetToSampleDataAsync()
@@ -308,6 +227,13 @@ namespace CopyPastaNative.Services
                     return;
                 }
 
+                var info = new FileInfo(_filePath);
+                if (info.Length > SnippetLimits.MaxDatabaseFileBytes)
+                {
+                    FailLoad($"The snippet database is larger than {SnippetLimits.MaxDatabaseFileBytes / (1024 * 1024)} MB and was not loaded.");
+                    return;
+                }
+
                 var json = await File.ReadAllTextAsync(_filePath);
                 List<Snippet>? loaded;
                 try
@@ -316,49 +242,49 @@ namespace CopyPastaNative.Services
                 }
                 catch (JsonException)
                 {
-                    _snippets = new List<Snippet>();
-                    _isLoaded = true;
-                    LastLoadWarning = "The snippet database could not be read because it is not valid JSON. Existing data was left unchanged.";
+                    FailLoad("The snippet database could not be read because it is not valid JSON. Existing data was left unchanged.");
                     return;
                 }
 
                 if (loaded == null)
                 {
-                    _snippets = new List<Snippet>();
-                    _isLoaded = true;
-                    LastLoadWarning = "The snippet database did not contain a snippet list. Existing data was left unchanged.";
+                    FailLoad("The snippet database did not contain a snippet list. Existing data was left unchanged.");
+                    return;
+                }
+
+                if (loaded.Count > SnippetLimits.MaxSnippetsInDatabase)
+                {
+                    FailLoad($"The snippet database contains {loaded.Count} snippets, which exceeds the maximum of {SnippetLimits.MaxSnippetsInDatabase}. Existing data was left unchanged.");
                     return;
                 }
 
                 var accepted = new List<Snippet>();
-                var rejected = 0;
                 foreach (var snippet in loaded)
                 {
-                    if (SnippetValidator.TryValidateSnippet(snippet, out _))
+                    if (!SnippetValidator.TryValidateSnippet(snippet, out _))
                     {
-                        snippet.Tags ??= new List<string>();
-                        accepted.Add(snippet);
+                        FailLoad("The snippet database contains invalid snippet data and was not loaded. Existing data was left unchanged.");
+                        return;
                     }
-                    else
-                    {
-                        rejected++;
-                    }
+
+                    snippet.Tags ??= new List<string>();
+                    accepted.Add(snippet);
                 }
 
                 _snippets = accepted;
                 _isLoaded = true;
-                if (rejected > 0)
-                {
-                    LastLoadWarning = $"{rejected} snippet(s) in the local database were skipped because they failed validation.";
-                }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _snippets = new List<Snippet>();
-                _isLoaded = true;
-                LastLoadWarning = "The snippet database could not be opened. Existing data was left unchanged.";
-                System.Diagnostics.Debug.WriteLine($"LoadSnippetsAsync: {ex.GetType().Name}");
+                FailLoad("The snippet database could not be opened. Existing data was left unchanged.");
             }
+        }
+
+        private void FailLoad(string message)
+        {
+            _snippets = new List<Snippet>();
+            _isLoaded = true;
+            LastLoadWarning = $"{message}{Environment.NewLine}Location: {_filePath}";
         }
 
         public async Task SaveSnippetsAsync()

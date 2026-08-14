@@ -1,4 +1,4 @@
-# CopyPasta Native v0.3
+# CopyPasta Native v0.3.1
 
 A native Windows code snippet manager built with C# WPF and Material Design.
 
@@ -8,7 +8,7 @@ CopyPasta Native is a personal code snippet manager that functions as a develope
 
 **CopyPasta is not a password manager.** Snippets are stored locally as plaintext JSON and are **not encrypted**. Do not store passwords, API keys, OAuth or session tokens, service-account credentials, client secrets, private keys, BitLocker recovery keys, connection strings containing credentials, or certificates containing private keys.
 
-CopyPasta does not require network connectivity for normal operation.
+CopyPasta does not require network connectivity for normal operation. CopyPasta itself performs no network synchronization or transmission.
 
 ## ✨ **Features**
 
@@ -18,7 +18,7 @@ CopyPasta does not require network connectivity for normal operation.
 - **Tag-based organization** for easy categorization and filtering
 - **Search functionality** to find snippets quickly by title, language, or tags
 - **Copy-to-clipboard** with one click (optional auto-clear, off by default)
-- **Local JSON storage** - your data stays on your machine under `%APPDATA%\CopyPasta`
+- **Local JSON storage** - stored under `%LOCALAPPDATA%\CopyPasta`
 - **Modern Material Design UI** with beautiful, intuitive interface
 - **About dialog** - version, storage path, and security notice
 
@@ -41,6 +41,15 @@ CopyPasta does not require network connectivity for normal operation.
 - **Theme Persistence** - Maintains your preference across all operations
 - **Visual Scrollbar** - Always visible, theme-aware scrollbar indicator
 
+## 🆕 **What's New in v0.3.1**
+
+Security and reliability patch on top of v0.3. No new product features.
+
+- **Bounded duplicate detection** — large snippet bodies (up to 512 KiB) are compared without allocating a full edit-distance matrix
+- **Hardened local database load** — `snippets.json` is size- and count-checked and fully validated; invalid data is rejected without overwriting the file
+- **Storage moved to `%LOCALAPPDATA%\CopyPasta`** — existing `%APPDATA%\CopyPasta` data is copied once if the new location is empty; roaming originals are left in place
+- **Removed obsolete `CopyPasta_v0.1.1_Release` binaries** from the source tree
+
 ## 🆕 **What's New in v0.3**
 
 Enterprise-hardened release. Existing v0.2 snippet features are unchanged; this version reduces attack surface and makes the app easier to evaluate on managed Windows endpoints.
@@ -49,10 +58,10 @@ Enterprise-hardened release. Existing v0.2 snippet features are unchanged; this 
 - **.NET 10** Windows/WPF target (self-contained publish no longer ships the old .NET 8 runtime)
 - **Unsafe BinaryFormatter compatibility disabled**
 - **JSON import treated as untrusted input** — no arbitrary .NET types, file-size / snippet-count / field-length limits, invalid files rejected without touching the live database
-- **Atomic saves** to `%APPDATA%\CopyPasta\snippets.json` with one previous backup (`snippets.json.bak`)
+- **Atomic saves** to `%LOCALAPPDATA%\CopyPasta\snippets.json` with one previous backup (`snippets.json.bak`)
 - **No silent save failures** — the user is told if persistence fails
 - **Runs as a standard user** (`asInvoker`) — no administrator privileges
-- **About dialog (ℹ)** with version `0.3.0`, data path, and a warning not to store secrets
+- **About dialog (ℹ)** with version, data path, and a warning not to store secrets
 - **Optional clipboard auto-clear** (off by default) — clears only if the clipboard still holds the exact text CopyPasta copied
 - **`SECURITY.md`** documenting what CopyPasta does and does not do
 
@@ -99,7 +108,7 @@ Enable multi-select mode to perform bulk operations:
 - **Framework**: .NET 10 WPF
 - **UI**: Material Design for WPF
 - **Code Editor**: ICSharpCode.AvalonEdit
-- **Storage**: Local JSON files (stored in `%APPDATA%\CopyPasta\`)
+- **Storage**: Local JSON files (stored in `%LOCALAPPDATA%\CopyPasta\`)
 - **Architecture**: MVVM-inspired with direct UI manipulation
 
 ## 📁 **Project Structure**
@@ -114,8 +123,10 @@ CopyPastaNative/
 │   └── SettingsService.cs         # settings.json load/save
 ├── Security/
 │   ├── SnippetJson.cs             # Safe JSON serializer settings
-│   ├── SnippetLimits.cs           # Import/size bounds
+│   ├── SnippetLimits.cs           # Import/size/duplicate bounds
 │   ├── SnippetValidator.cs        # Untrusted import validation
+│   ├── SnippetDuplicateDetector.cs
+│   ├── DataDirectoryResolver.cs   # LocalAppData + roaming migration
 │   └── ClipboardClearPolicy.cs    # Exact-match clipboard clear
 ├── Converters/
 │   └── CountToVisibilityConverter.cs
@@ -147,10 +158,12 @@ CopyPastaNative/
 
 ### **First Run**
 - The app will create sample snippets to get you started
-- Data is saved under `%APPDATA%\CopyPasta\`:
+- Data is saved under `%LOCALAPPDATA%\CopyPasta\`:
   - `snippets.json` — active snippet database
   - `snippets.json.bak` — previous valid database after a successful save
   - `settings.json` — local preferences (clipboard auto-clear)
+
+If you used v0.3.0 or earlier, CopyPasta copies those files from `%APPDATA%\CopyPasta` the first time the LocalAppData database is missing. The original roaming files are not deleted.
 
 ### **Building a release from source**
 From the repository root (no Visual Studio required):
@@ -159,7 +172,7 @@ From the repository root (no Visual Studio required):
 .\scripts\Release-CopyPasta.ps1
 ```
 
-Output is written to `artifacts\CopyPasta_v0.3.0\` plus `CopyPasta_v0.3.0.zip` and `artifacts\RELEASE_HASHES.md`.
+Output is written to `artifacts\CopyPasta_v0.3.1\` plus `CopyPasta_v0.3.1.zip` and `artifacts\RELEASE_HASHES.md`.
 
 ## 💡 **Usage Guide**
 
@@ -213,7 +226,13 @@ Snippets are stored with the following structure:
 
 ## 🔄 **Version History**
 
-### **v0.3** (Current)
+### **v0.3.1** (Current)
+- Bounded duplicate detection for large snippet bodies
+- Fail-closed load of the local `snippets.json` database (size, count, and field validation)
+- Default storage under `%LOCALAPPDATA%\CopyPasta` with a one-time copy from `%APPDATA%\CopyPasta`
+- Removed obsolete compiled v0.1.1 release artifacts from source
+
+### **v0.3**
 - Targeted .NET 10; disabled unsafe BinaryFormatter compatibility
 - Hardened JSON import (bounds, no type-name deserialization)
 - Atomic AppData saves with one local backup
@@ -249,7 +268,7 @@ Snippets are stored with the following structure:
 - Does not execute stored snippets
 - Does not require network connectivity
 - Does not contain telemetry
-- Stores snippets locally under `%APPDATA%\CopyPasta`
+- Stores snippets locally under `%LOCALAPPDATA%\CopyPasta`
 - Snippet database and exports are plaintext
 - Should not be used for storing credentials or secrets
 
@@ -257,7 +276,7 @@ See [SECURITY.md](SECURITY.md) for the full security policy, import behavior, an
 
 ## 🌟 **What's Next (Future Versions)**
 
-v0.3 is an enterprise-hardening release. Features that increase attack surface (plugins, cloud sync, snippet execution, automatic updates) are intentionally out of scope.
+v0.3.1 is a security/reliability patch on the v0.3 enterprise-hardening release. Features that increase attack surface (plugins, cloud sync, snippet execution, automatic updates) are intentionally out of scope.
 
 ## 📄 **License**
 
@@ -269,6 +288,6 @@ This is currently a personal project, but contributions are welcome! Feel free t
 
 ---
 
-**Version**: 0.3.0  
+**Version**: 0.3.1  
 **Release Date**: August 2026  
 **Status**: Enterprise-Hardened local snippet manager
